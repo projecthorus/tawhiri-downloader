@@ -108,11 +108,13 @@ end = struct
     | In
     | Out
     | Inout
+  [@@deriving sexp_of]
 
   type ctl_action =
     | Add of in_and_or_out
     | Del
     | Mod of in_and_or_out
+  [@@deriving sexp_of]
 
   type t = int
 
@@ -141,6 +143,14 @@ end = struct
         ~events
         ~data:(Core.Unix.File_descr.to_int fd)
     with
+    | exception Unix.Unix_error (code, fn_name, str) ->
+      let extra_info = sprintf !"%{sexp:ctl_action} %{Core.Unix.File_descr}" change fd in
+      let str = 
+        match str with
+        | "" -> extra_info
+        | str -> sprintf "%s %s" str extra_info
+      in
+      raise (Unix.Unix_error (code, fn_name, str))
     | 0 -> ()
     | _ -> failwith "epoll_ctl unexpected return value"
   ;;
@@ -203,7 +213,7 @@ module Async_multi_integration = struct
       | POLL_NONE | POLL_REMOVE ->
         (* curl sometimes (the resolver?) calls this _after_ closing the fd. *)
         (try Epoll.ctl epoll fd Del with
-        | Unix.Unix_error (ENOENT, _, _) -> ())
+        | Unix.Unix_error (EBADF, _, _) -> ())
       | POLL_IN -> add_or_mod_epoll fd In
       | POLL_OUT -> add_or_mod_epoll fd Out
       | POLL_INOUT -> add_or_mod_epoll fd Inout
